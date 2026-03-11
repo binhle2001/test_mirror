@@ -21,7 +21,7 @@ def get_resistance_desc(personality):
 
 def remove_text_in_parentheses(text):
     text = re.sub(r"\[[^)]*\]", "", text)
-    return re.sub("[\s]+", " ", text).strip()
+    return re.sub(r"[\s]+", " ", text).strip()
 
 
 class TherapySession:

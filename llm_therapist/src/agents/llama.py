@@ -4,7 +4,11 @@ import pandas as pd
 
 from typing import List
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+except Exception:
+    LLM = None
+    SamplingParams = None
 
 from pathlib import Path
 from os.path import join as pjoin
@@ -21,6 +25,8 @@ class Llama3:
         self._load_model()
 
     def _load_model(self):
+        if LLM is None:
+            raise ImportError("vllm is required for Llama3Counselor/CactusLlama3Counselor. Install it or use a GPT/Gemini counselor model.")
         self.llm = LLM(
             model=self.model_name_or_path,
             tensor_parallel_size=1,
@@ -54,6 +60,8 @@ class Llama3:
             "stop": None,
         }
         params = {**default_params, **kwargs}
+        if SamplingParams is None:
+            raise ImportError("vllm is required for Llama3Counselor/CactusLlama3Counselor. Install it or use a GPT/Gemini counselor model.")
         sampling_params = SamplingParams(**params)
         prompts_chat_applied = [
             self.tokenizer.apply_chat_template(
