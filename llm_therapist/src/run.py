@@ -6,6 +6,8 @@ import pandas as pd
 
 from tqdm import tqdm
 from os.path import join as pjoin
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from src.agents import GPTClient, GPTCounselor, CactusLlama3Counselor, Llama3Counselor
 
@@ -143,12 +145,25 @@ if __name__ == "__main__":
         default=20,
         help="Maximum number of turns for the session.",
     )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers (recommended for GPT/Gemini only).",
+    )
+    parser.add_argument(
+        "--expected_rows",
+        type=int,
+        default=800,
+        help="Expected number of rows in input CSV. Set 0 to disable check.",
+    )
     args = parser.parse_args()
 
     data_df = pd.read_csv(args.input_data)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    assert len(data_df) == 800
+    if args.expected_rows and args.expected_rows > 0:
+        assert len(data_df) == args.expected_rows
     
     output_path = pjoin(
         args.output_dir,
@@ -161,22 +176,37 @@ if __name__ == "__main__":
     else:
         cache_ids = []
 
-    therapy = TherapySession(
-        client_model_name=args.client_model_name,
-        counselor_model_name=args.counselor_model_path,
-        max_turns=args.max_turns,
-    )
+    counselor_name = args.counselor_model_path.split("/")[-1]
+    run_rows = [r for r in data_df.to_dict(orient="records") if r.get("idx") not in cache_ids]
 
-    for i, row in tqdm(
-        data_df.iterrows(),
-        total=len(data_df),
-        desc=f"Counseling with {args.counselor_model_path.split('/')[-1]}",
-    ):
-        if row["idx"] in cache_ids:
-            continue
-        therapy.initialize_session(row.to_dict())
-        result = therapy.run_session()
+    write_lock = Lock()
 
-        with open(output_path, "a+", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False)
-            f.write("\n")
+    def run_one(sample):
+        therapy = TherapySession(
+            client_model_name=args.client_model_name,
+            counselor_model_name=args.counselor_model_path,
+            max_turns=args.max_turns,
+        )
+        therapy.initialize_session(sample)
+        return therapy.run_session()
+
+    use_parallel = args.num_workers and args.num_workers > 1
+    if use_parallel and ("camel" in args.counselor_model_path or "llama" in args.counselor_model_path.lower()):
+        use_parallel = False
+
+    if not use_parallel:
+        for sample in tqdm(run_rows, total=len(run_rows), desc=f"Counseling with {counselor_name}"):
+            result = run_one(sample)
+            with write_lock:
+                with open(output_path, "a+", encoding="utf-8") as f:
+                    json.dump(result, f, ensure_ascii=False)
+                    f.write("\n")
+    else:
+        with ThreadPoolExecutor(max_workers=args.num_workers) as ex:
+            futures = [ex.submit(run_one, sample) for sample in run_rows]
+            for fut in tqdm(as_completed(futures), total=len(futures), desc=f"Counseling with {counselor_name}"):
+                result = fut.result()
+                with write_lock:
+                    with open(output_path, "a+", encoding="utf-8") as f:
+                        json.dump(result, f, ensure_ascii=False)
+                        f.write("\n")
