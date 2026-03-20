@@ -136,7 +136,7 @@ if __name__ == "__main__":
         "--client_model_name",
         type=str,
         default="gpt-3.5-turbo",
-        choices=["gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini", "gemini-3-flash-preview"],
+        choices=["gpt-3.5-turbo", "gpt-4o", "gpt-4o-mini", "gemini-flash-preview"],
         help="Type of LLM to use.",
     )
     parser.add_argument(
